@@ -1,91 +1,90 @@
-# IG Movie Bot (Termux edition)
+# 🤖 IG Movie Bot - All-in-One
 
-Bot posting otomatis ke Instagram Reels, 2x sehari (06:00 & 19:00 WIB), rotasi
-random antara 2 tipe konten:
-- **Trivia card** — fakta film dari TMDB (budget, cast, rating, dll)
-- **Guess-the-movie** — backdrop di-blur bertahap, reveal judul di akhir
+Bot Instagram auto-post film trivia, guess-the-movie, aktor trivia, auto-reply DM, komentar pancingan, anti-ban.
 
-Sumber gambar: backdrop/still resmi dari TMDB (bukan capture video/trailer),
-diolah jadi slideshow video dengan efek Ken Burns via ffmpeg.
+## 🚀 Fitur
 
-Video hasil generate di-hosting gratis lewat GitHub + jsDelivr CDN (bukan
-Railway) — cocok buat dijalankan penuh dari Termux tanpa biaya apapun.
+- ✅ **Auto-Post Trivia Film** - Fakta menarik + voiceover TTS
+- ✅ **Guess The Movie** - Tebak film dari scene blur
+- ✅ **Aktor Trivia** - Fakta menarik tentang aktor
+- ✅ **Auto-Reply DM** - Rekomendasi film via DM
+- ✅ **Komentar Pancingan** - Auto-comment untuk trigger engagement
+- ✅ **Anti-Ban** - Random delay, human-like behavior, daily limit
+- ✅ **Source Detection** - Auto-detect ID/KR/JP/IN/CN/Western
+- ✅ **Scheduled Random** - Posting otomatis dengan waktu random
 
-## Setup di Termux
+## 📱 Setup Termux
 
-### 1. Install dependencies
+```bash
+pkg update && pkg install git python ffmpeg
+pip install -r requirements.txt
 ```
-pkg update -y && pkg upgrade -y
-pkg install -y python ffmpeg git cronie
-pip install -r requirements.txt --break-system-packages
-```
 
-### 2. Clone repo (kalau belum)
-```
-cd ~
-git clone https://github.com/enigmarealism99/ig-movie-bot.git
-cd ig-movie-bot
-```
-Kalau sudah pernah clone/upload manual sebelumnya, cukup `cd` ke foldernya
-dan pastikan remote GitHub sudah benar (`git remote -v`).
+## ⚙️ Environment
 
-### 3. Setup git credential (biar bisa push tanpa masukin password tiap kali)
-```
-git config --global user.email "email_kamu@example.com"
-git config --global user.name "enigmarealism99"
-git config --global credential.helper store
-```
-Push pertama kali akan minta username + **Personal Access Token** GitHub
-(bukan password akun) — buat di github.com → Settings → Developer settings →
-Personal access tokens → Generate new token (scope: `repo`). Setelah dimasukkan
-sekali, tersimpan otomatis untuk push berikutnya.
-
-### 4. Isi file `.env`
-Copy `.env.example` jadi `.env`, isi sesuai kondisi kamu:
-```
+```bash
 cp .env.example .env
-nano .env
+# Edit .env dengan API keys
 ```
-- `TMDB_API_KEY` — key TMDB yang sudah ada (bekas onairtalkbot)
-- `IG_USER_ID` — sudah terisi: `17841480212098302`
-- `IG_ACCESS_TOKEN` — long-lived token yang sudah kamu generate & simpan
-- `GITHUB_USERNAME`, `GITHUB_REPO`, `GITHUB_BRANCH` — sudah terisi default
 
-### 5. Test manual
-```
+## 🎬 Cara Pakai
+
+```bash
+# Post trivia sekali
 python main.py --type trivia
-```
-Tunggu sampai selesai, cek Instagram — kalau muncul Reels baru, alurnya benar.
-Kalau error, kirim pesan errornya, gampang di-debug dari log yang muncul.
 
-### 6. Setup jadwal otomatis (cron)
+# Post guess-the-movie
+python main.py --type guess
+
+# Post aktor trivia
+python main.py --type trivia --actor
+
+# Scheduled mode (loop otomatis)
+python main.py --scheduled
+
+# Hanya proses DM
+python main.py --dm-only
 ```
-sv-enable crond
-sv up crond
+
+## ⏰ Cron (Jadwal Otomatis)
+
+```bash
 crontab -e
-```
-Isi 2 baris ini (sesuaikan path kalau folder beda):
-```
-0 6 * * * cd /data/data/com.termux/files/home/ig-movie-bot && python main.py >> log.txt 2>&1
-0 19 * * * cd /data/data/com.termux/files/home/ig-movie-bot && python main.py >> log.txt 2>&1
-```
-Simpan (`Ctrl+O` → `Enter` → `Ctrl+X`), lalu cek dengan `crontab -l`.
 
-### 7. Biar tetap jalan walau HP idle
+# Jalankan scheduled mode setiap jam
+0 * * * * cd ~/ig-movie-bot && python main.py --scheduled
 ```
-termux-wake-lock
-```
-Dan matikan battery optimization untuk Termux di Android Settings → Apps →
-Termux → Battery → Unrestricted. Tanpa ini, Android bisa "membekukan" Termux
-saat HP idle lama, jadi cron gak jalan tepat waktu.
 
-## Catatan
-- Font teks reveal judul di video "guess-the-movie": kalau mau custom, taruh
-  file `.ttf` di folder `fonts/Poppins-Bold.ttf`. Kalau tidak ada, otomatis
-  fallback ke font default sistem (DejaVu Sans Bold, biasanya sudah ada di
-  Termux lewat paket `fontconfig` — install dengan `pkg install fontconfig`
-  kalau font fallback belum ketemu).
-- Video disimpan sementara di GitHub repo (folder `media/`) hanya selama
-  proses publish, lalu otomatis dihapus lagi setelah berhasil post — supaya
-  repo tidak numpuk file besar.
-- Cek `log.txt` di folder project kalau mau lihat riwayat run cron.
+## 📁 Struktur File
+
+```
+ig-movie-bot/
+├── main.py              # Entry point
+├── video_builder.py     # Generate video Reels
+├── caption_generator.py # Generate caption
+├── ig_publisher.py      # Publish ke Instagram
+├── git_publisher.py     # Push ke GitHub
+├── tmdb_client.py       # Integrasi TMDB API
+├── dm_handler.py        # Auto-reply DM
+├── comment_bot.py       # Komentar pancingan
+├── anti_ban.py          # Strategi anti-ban
+├── media/               # Folder video
+├── fonts/               # Font custom (opsional)
+├── .env                 # Environment variables
+└── requirements.txt     # Dependencies
+```
+
+## 🛡️ Anti-Ban Strategy
+
+- Random delay 5-60 detik antar aksi
+- Waktu posting random dalam range (tidak exact)
+- Daily limit: max 3 post/hari
+- 10% chance skip hari (anti-pattern)
+- Exponential backoff saat error
+- Human-like typing simulation
+
+## 📝 Catatan
+
+- `tmdb_client.py` adalah placeholder. Ganti dengan implementasi asli kamu.
+- DM handler butuh Instagram Business API permissions.
+- Font custom: taruh di folder `fonts/Poppins-Bold.ttf`.

@@ -1,114 +1,148 @@
+"""video_builder.py - FINAL
+Bikin video Reels (1080x1920) dari backdrop TMDB.
+Fix: zoom 1.1x, text overlay, TTS voiceover, format valid.
 """
-video_builder.py
-Bikin video Reels (1080x1920, vertical) dari backdrop stills TMDB pakai efek Ken Burns (zoompan)
-via ffmpeg. Tidak menggunakan potongan video asli film -- hanya still image resmi.
-"""
 
-import os
-import subprocess
-import tempfile
-import requests
+import os, subprocess, tempfile, requests, textwrap
 
-WIDTH, HEIGHT = 1080, 1920
-SECONDS_PER_IMAGE = 3
-FPS = 30
-_CUSTOM_FONT = os.path.join(os.path.dirname(__file__), "fonts", "Poppins-Bold.ttf")
-_FALLBACK_FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-FONT_PATH = _CUSTOM_FONT if os.path.exists(_CUSTOM_FONT) else _FALLBACK_FONT
+try:
+    from gtts import gTTS
+    GTTS_AVAILABLE = True
+except ImportError:
+    GTTS_AVAILABLE = False
+
+WIDTH, HEIGHT, FPS = 1080, 1920, 30
+
+FONT_PATHS = [
+    os.path.join(os.path.dirname(__file__), "fonts", "Poppins-Bold.ttf"),
+    "/system/fonts/Roboto-Bold.ttf",
+    "/data/data/com.termux/files/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+]
+FONT_PATH = next((fp for fp in FONT_PATHS if os.path.exists(fp)), None)
 
 
-def _download_image(url, dest_path):
+def _download_image(url, dest):
     r = requests.get(url, timeout=30)
     r.raise_for_status()
-    with open(dest_path, "wb") as f:
+    with open(dest, "wb") as f:
         f.write(r.content)
-    return dest_path
+    return dest
 
 
-def _zoompan_filter(zoom_in=True):
-    """Filter Ken Burns: perlahan zoom in atau zoom out selama durasi clip."""
-    frames = SECONDS_PER_IMAGE * FPS
-    if zoom_in:
-        z_expr = f"min(zoom+0.0015,1.3)"
-    else:
-        z_expr = f"if(lte(zoom,1.0),1.3,max(1.001,zoom-0.0015))"
-    return (
-        f"scale={WIDTH*2}:{HEIGHT*2}:force_original_aspect_ratio=increase,"
-        f"crop={WIDTH*2}:{HEIGHT*2},"
-        f"zoompan=z='{z_expr}':d={frames}:s={WIDTH}x{HEIGHT}:fps={FPS}"
-    )
+def _generate_tts(text, output_path, lang='id'):
+    if not GTTS_AVAILABLE:
+        return False
+    try:
+        text = text[:300].rsplit('.', 1)[0] + '.' if len(text) > 300 else text
+        gTTS(text=text, lang=lang, slow=False).save(output_path)
+        return True
+    except Exception as e:
+        print(f"TTS error: {e}")
+        return False
 
 
-def build_slideshow(image_urls, output_path, mode="trivia", title_text=None):
-    """
-    mode: 'trivia'  -> Ken Burns normal semua gambar
-          'guess'   -> gambar pertama-pertama diblur berat, gambar terakhir jelas + title reveal
-    """
+def _get_audio_duration(path):
+    try:
+        cmd = ['ffprobe', '-v', 'error', '-show_entries', 'format=duration',
+               '-of', 'default=noprint_wrappers=1:nokey=1', path]
+        return float(subprocess.run(cmd, capture_output=True, text=True, timeout=5).stdout.strip())
+    except:
+        return None
+
+
+def _build_single_frame(img, out, duration, trivia=None, title=None, zoom_in=True):
+    frames = int(duration * FPS)
+    z = "min(zoom+0.0008,1.1)" if zoom_in else "if(lte(zoom,1.0),1.1,max(1.001,zoom-0.0008))"
+    vf = f"scale=iw*4:ih*4,zoompan=z='{z}':d={frames}:s={WIDTH}x{HEIGHT}:fps={FPS},format=yuv420p"
+
+    texts = []
+    if title and FONT_PATH:
+        st = title.replace("'", "\'").replace(":", "\:").replace(",", "\,")
+        texts.append(f"drawtext=fontfile={FONT_PATH}:text='{st}':fontcolor=white:fontsize=56:borderw=4:bordercolor=black@0.8:x=(w-text_w)/2:y=80:line_spacing=8")
+    if trivia and FONT_PATH:
+        st = trivia.replace("'", "\'").replace(":", "\:").replace(",", "\,")
+        wrapped = '\\n'.join(textwrap.wrap(st, width=30))
+        texts.append(f"drawtext=fontfile={FONT_PATH}:text='{wrapped}':fontcolor=white:fontsize=36:borderw=3:bordercolor=black@0.8:x=(w-text_w)/2:y=h-280:line_spacing=6")
+
+    if texts:
+        vf += "," + ",".join(texts)
+
+    cmd = ["ffmpeg", "-y", "-loop", "1", "-i", img, "-vf", vf, "-t", str(duration), "-pix_fmt", "yuv420p", "-r", str(FPS), out]
+    return subprocess.run(cmd, capture_output=True, text=True).returncode == 0
+
+
+def build_slideshow(urls, output_path, mode="trivia", title_text=None, trivia_text=None):
+    if not urls:
+        raise ValueError("image_urls kosong!")
+
+    if not trivia_text and mode == "trivia":
+        trivia_text = "Tahukah kamu? Film ini punya fakta menarik!"
+
     with tempfile.TemporaryDirectory() as tmpdir:
-        local_images = []
-        for i, url in enumerate(image_urls):
+        imgs = []
+        for i, url in enumerate(urls):
             dest = os.path.join(tmpdir, f"img_{i}.jpg")
             _download_image(url, dest)
-            local_images.append(dest)
+            imgs.append(dest)
 
-        clip_paths = []
-        for i, img in enumerate(local_images):
+        n = len(imgs)
+        total_dur = n * 3
+
+        # TTS Audio
+        audio_path = os.path.join(tmpdir, "voiceover.mp3")
+        tts_ok = False
+        if mode == "trivia" and trivia_text:
+            tts_text = f"{title_text}. {trivia_text}" if title_text else trivia_text
+            tts_ok = _generate_tts(tts_text, audio_path)
+
+        if not tts_ok:
+            audio_path = os.path.join(tmpdir, "silent.mp3")
+            subprocess.run(["ffmpeg", "-y", "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100",
+                          "-t", str(total_dur), "-c:a", "aac", "-b:a", "128k", audio_path], capture_output=True)
+
+        audio_dur = _get_audio_duration(audio_path) or total_dur
+
+        # Build clips
+        clips = []
+        for i, img in enumerate(imgs):
             clip_out = os.path.join(tmpdir, f"clip_{i}.mp4")
-            is_last = i == len(local_images) - 1
-            zoom_in = i % 2 == 0
+            dur = audio_dur / n
 
-            vf = _zoompan_filter(zoom_in=zoom_in)
+            if mode == "guess" and i != n - 1:
+                blurred = os.path.join(tmpdir, f"blur_{i}.jpg")
+                subprocess.run(["ffmpeg", "-y", "-i", img, "-vf", f"gblur=sigma={max(20-i*6,5)}", blurred], capture_output=True)
+                img = blurred
 
-            if mode == "guess" and not is_last:
-                # Blur berat untuk gambar "tebak-tebakan", makin ke belakang makin jelas dikit
-                blur_strength = max(25 - (i * 8), 8)
-                vf += f",gblur=sigma={blur_strength}"
+            if not _build_single_frame(img, clip_out, dur, 
+                                       trivia_text if mode=="trivia" else None,
+                                       title_text if i==0 else None,
+                                       i % 2 == 0):
+                raise RuntimeError(f"Gagal build clip {i}")
+            clips.append(clip_out)
 
-            if mode == "guess" and is_last and title_text:
-                safe_title = title_text.replace("'", "\u2019").replace(":", "\\:")
-                vf += (
-                    f",drawtext=fontfile={FONT_PATH}:text='{safe_title}':"
-                    f"fontcolor=white:fontsize=64:borderw=3:bordercolor=black:"
-                    f"x=(w-text_w)/2:y=h-350"
-                )
-
-            cmd = [
-                "ffmpeg", "-y", "-loop", "1", "-i", img,
-                "-vf", vf,
-                "-t", str(SECONDS_PER_IMAGE),
-                "-pix_fmt", "yuv420p",
-                clip_out,
-            ]
-            subprocess.run(cmd, check=True, capture_output=True)
-            clip_paths.append(clip_out)
-
-        # Gabungkan semua clip jadi satu video pakai concat demuxer
-        concat_list = os.path.join(tmpdir, "concat.txt")
-        with open(concat_list, "w") as f:
-            for c in clip_paths:
+        # Concat
+        concat = os.path.join(tmpdir, "concat.txt")
+        with open(concat, "w") as f:
+            for c in clips:
                 f.write(f"file '{c}'\n")
 
-        silent_video = os.path.join(tmpdir, "silent.mp4")
-        cmd_concat = [
-            "ffmpeg", "-y", "-f", "concat", "-safe", "0",
-            "-i", concat_list,
-            "-c", "copy",
-            silent_video,
-        ]
-        subprocess.run(cmd_concat, check=True, capture_output=True)
+        silent = os.path.join(tmpdir, "silent.mp4")
+        subprocess.run(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", concat, "-c", "copy", silent], check=True, capture_output=True)
 
-        # Tambahkan track audio senyap + flag faststart -- Instagram Reels
-        # menolak video tanpa audio track dan/atau tanpa moov atom di depan file
-        cmd_audio = [
-            "ffmpeg", "-y",
-            "-i", silent_video,
-            "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100",
-            "-c:v", "copy",
-            "-c:a", "aac", "-b:a", "128k",
-            "-shortest",
-            "-movflags", "+faststart",
-            output_path,
-        ]
-        subprocess.run(cmd_audio, check=True, capture_output=True)
+        # Merge with audio
+        cmd = ["ffmpeg", "-y", "-i", silent, "-i", audio_path,
+               "-c:v", "libx264", "-preset", "fast", "-crf", "23",
+               "-pix_fmt", "yuv420p", "-r", str(FPS),
+               "-c:a", "aac", "-b:a", "128k", "-ar", "44100",
+               "-shortest", "-movflags", "+faststart", output_path]
 
-    return output_path
+        r = subprocess.run(cmd, capture_output=True, text=True)
+        if r.returncode != 0:
+            raise RuntimeError(f"Merge error: {r.stderr}")
+
+        if not os.path.exists(output_path) or os.path.getsize(output_path) < 1000:
+            raise RuntimeError("Output corrupt")
+
+        print(f"Video selesai: {output_path} ({os.path.getsize(output_path)/1024/1024:.1f} MB)")
+        return output_path
