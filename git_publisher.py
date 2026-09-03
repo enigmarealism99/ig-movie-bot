@@ -40,10 +40,12 @@ def publish_video_to_github(local_video_path, filename):
     if os.path.abspath(local_video_path) != os.path.abspath(dest_path):
         _run(f"cp '{local_video_path}' '{dest_path}'")
 
-    # Tarik perubahan terbaru dulu biar gak konflik, lalu commit & push
+    # Commit dulu SEBELUM pull -- kalau ada sisa file dari run sebelumnya yang
+    # belum ke-commit, itu bikin "git pull --rebase" nolak jalan (unstaged
+    # changes). Commit semua dulu baru pull, biar urutan aman.
+    _run("git add -A")
+    _run(f"git commit -m 'Auto: tambah video {filename}' --allow-empty")
     _run("git pull --rebase")
-    _run(f"git add media/{filename}")
-    _run(f"git commit -m 'Auto: tambah video {filename}'")
     _run(f"git push origin {GITHUB_BRANCH}")
 
     jsdelivr_url = (
@@ -85,6 +87,7 @@ def cleanup_old_video(filename):
     dest_path = os.path.join(REPO_DIR, "media", filename)
     if os.path.exists(dest_path):
         os.remove(dest_path)
-        _run(f"git add media/{filename}")
-        _run(f"git commit -m 'Auto: hapus video lama {filename}'")
-        _run(f"git push origin {GITHUB_BRANCH}")
+    _run("git add -A")
+    _run(f"git commit -m 'Auto: hapus video lama {filename}' --allow-empty")
+    _run("git pull --rebase")
+    _run(f"git push origin {GITHUB_BRANCH}")
