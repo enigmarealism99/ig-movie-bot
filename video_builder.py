@@ -88,12 +88,27 @@ def build_slideshow(image_urls, output_path, mode="trivia", title_text=None):
             for c in clip_paths:
                 f.write(f"file '{c}'\n")
 
+        silent_video = os.path.join(tmpdir, "silent.mp4")
         cmd_concat = [
             "ffmpeg", "-y", "-f", "concat", "-safe", "0",
             "-i", concat_list,
             "-c", "copy",
-            output_path,
+            silent_video,
         ]
         subprocess.run(cmd_concat, check=True, capture_output=True)
+
+        # Tambahkan track audio senyap + flag faststart -- Instagram Reels
+        # menolak video tanpa audio track dan/atau tanpa moov atom di depan file
+        cmd_audio = [
+            "ffmpeg", "-y",
+            "-i", silent_video,
+            "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100",
+            "-c:v", "copy",
+            "-c:a", "aac", "-b:a", "128k",
+            "-shortest",
+            "-movflags", "+faststart",
+            output_path,
+        ]
+        subprocess.run(cmd_audio, check=True, capture_output=True)
 
     return output_path
