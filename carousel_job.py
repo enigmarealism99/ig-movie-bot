@@ -117,7 +117,8 @@ def run_carousel_list():
         raise RuntimeError(f"Data gak cukup buat carousel list ({source_key})")
 
     slide_dir = os.path.join(MEDIA_DIR, f"carousel_{uuid.uuid4().hex}")
-    slide_paths = build_list_carousel(items, list_title, slide_dir)
+    accent_key = source_key.replace("genre_", "") if source_key.startswith("genre_") else "default"
+    slide_paths = build_list_carousel(items, list_title, slide_dir, accent_key=accent_key)
 
     filenames = [f"{os.path.basename(slide_dir)}_{os.path.basename(p)}" for p in slide_paths]
     pairs = list(zip(slide_paths, filenames))
