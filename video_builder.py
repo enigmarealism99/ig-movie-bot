@@ -3,7 +3,13 @@ Bikin video Reels (1080x1920) dari backdrop TMDB.
 Fix: zoom 1.1x, text overlay, TTS voiceover, format valid.
 """
 
-import os, subprocess, tempfile, requests, textwrap
+import os, subprocess, tempfile, requests, textwrap, random, glob, asyncio
+
+try:
+    import edge_tts
+    EDGE_TTS_AVAILABLE = True
+except ImportError:
+    EDGE_TTS_AVAILABLE = False
 
 try:
     from gtts import gTTS
@@ -12,6 +18,11 @@ except ImportError:
     GTTS_AVAILABLE = False
 
 WIDTH, HEIGHT, FPS = 1080, 1920, 30
+MUSIC_DIR = os.path.join(os.path.dirname(__file__), "music")
+
+# Suara Indonesia yang natural (Edge TTS, gratis). Bisa ganti ke suara lain:
+# id-ID-GadisNeural (perempuan) atau id-ID-ArdiNeural (laki-laki)
+EDGE_VOICE = "id-ID-ArdiNeural"
 
 FONT_PATHS = [
     os.path.join(os.path.dirname(__file__), "fonts", "Poppins-Bold.ttf"),
@@ -30,16 +41,40 @@ def _download_image(url, dest):
     return dest
 
 
+async def _edge_tts_async(text, output_path, voice):
+    communicate = edge_tts.Communicate(text, voice)
+    await communicate.save(output_path)
+
+
 def _generate_tts(text, output_path, lang='id'):
-    if not GTTS_AVAILABLE:
-        return False
-    try:
-        text = text[:300].rsplit('.', 1)[0] + '.' if len(text) > 300 else text
-        gTTS(text=text, lang=lang, slow=False).save(output_path)
-        return True
-    except Exception as e:
-        print(f"TTS error: {e}")
-        return False
+    text = text[:300].rsplit('.', 1)[0] + '.' if len(text) > 300 else text
+
+    # Coba Edge TTS dulu -- suaranya jauh lebih natural, gratis, gak perlu API key
+    if EDGE_TTS_AVAILABLE:
+        try:
+            asyncio.run(_edge_tts_async(text, output_path, EDGE_VOICE))
+            return True
+        except Exception as e:
+            print(f"Edge TTS error, fallback ke gTTS: {e}")
+
+    # Fallback ke gTTS kalau Edge TTS gagal (misal gak ada internet ke server MS)
+    if GTTS_AVAILABLE:
+        try:
+            gTTS(text=text, lang=lang, slow=False).save(output_path)
+            return True
+        except Exception as e:
+            print(f"TTS error: {e}")
+            return False
+
+    return False
+
+
+def _pick_background_music():
+    """Ambil 1 file musik random dari folder music/ kalau ada."""
+    if not os.path.isdir(MUSIC_DIR):
+        return None
+    files = glob.glob(os.path.join(MUSIC_DIR, "*.mp3")) + glob.glob(os.path.join(MUSIC_DIR, "*.m4a"))
+    return random.choice(files) if files else None
 
 
 def _get_audio_duration(path):
@@ -149,12 +184,31 @@ def build_slideshow(urls, output_path, mode="trivia", title_text=None, trivia_te
         silent = os.path.join(tmpdir, "silent.mp4")
         subprocess.run(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", concat, "-c", "copy", silent], check=True, capture_output=True)
 
-        # Merge with audio
-        cmd = ["ffmpeg", "-y", "-i", silent, "-i", audio_path,
-               "-c:v", "libx264", "-preset", "fast", "-crf", "23",
-               "-pix_fmt", "yuv420p", "-r", str(FPS),
-               "-c:a", "aac", "-b:a", "128k", "-ar", "44100",
-               "-shortest", "-movflags", "+faststart", output_path]
+        # Merge with audio (+ musik latar kalau ada file di folder music/)
+        music_path = _pick_background_music()
+
+        if music_path:
+            cmd = [
+                "ffmpeg", "-y",
+                "-i", silent, "-i", audio_path,
+                "-stream_loop", "-1", "-i", music_path,
+                "-filter_complex",
+                "[1:a]volume=1.0[voice];[2:a]volume=0.12[music];"
+                "[voice][music]amix=inputs=2:duration=first:dropout_transition=2[aout]",
+                "-map", "0:v:0", "-map", "[aout]",
+                "-c:v", "libx264", "-preset", "fast", "-crf", "23",
+                "-pix_fmt", "yuv420p", "-r", str(FPS),
+                "-c:a", "aac", "-b:a", "128k", "-ar", "44100",
+                "-shortest", "-movflags", "+faststart", output_path,
+            ]
+        else:
+            cmd = [
+                "ffmpeg", "-y", "-i", silent, "-i", audio_path,
+                "-c:v", "libx264", "-preset", "fast", "-crf", "23",
+                "-pix_fmt", "yuv420p", "-r", str(FPS),
+                "-c:a", "aac", "-b:a", "128k", "-ar", "44100",
+                "-shortest", "-movflags", "+faststart", output_path,
+            ]
 
         r = subprocess.run(cmd, capture_output=True, text=True)
         if r.returncode != 0:
