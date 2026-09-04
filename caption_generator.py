@@ -69,3 +69,28 @@ BAIT_COMMENTS = [
 def get_bait_comment():
     """Komentar pancingan (engagement bait) buat dipost otomatis setelah publish."""
     return random.choice(BAIT_COMMENTS)
+
+
+CAROUSEL_TRIVIA_HOOKS = [
+    "Fakta-fakta {title} yang jarang diketahui \U0001F440 Geser \u2192",
+    "Yuk kenalan lebih dalam sama \"{title}\" \U0001F3AC",
+    "{title}: berapa banyak fakta ini yang kamu tau? \U0001F447",
+]
+
+CAROUSEL_LIST_HOOKS = [
+    "{list_title} \U0001F447 Save biar gak lupa!",
+    "{list_title} versi kita \U0001F3AC Setuju gak?",
+    "{list_title} \u2014 mana favorit kamu? Komen di bawah!",
+]
+
+
+def build_carousel_trivia_caption(title, facts):
+    hook = random.choice(CAROUSEL_TRIVIA_HOOKS).format(title=title)
+    tags = " ".join(random.sample(HASHTAG_POOL, 5))
+    return f"{hook}\n\n{tags}"
+
+
+def build_carousel_list_caption(list_title):
+    hook = random.choice(CAROUSEL_LIST_HOOKS).format(list_title=list_title)
+    tags = " ".join(random.sample(HASHTAG_POOL, 5))
+    return f"{hook}\n\n{tags}"

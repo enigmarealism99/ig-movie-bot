@@ -28,6 +28,50 @@ def _run(cmd):
     return result.stdout
 
 
+def publish_images_to_github(local_paths_and_filenames):
+    """
+    Push beberapa gambar sekaligus (buat carousel) dalam SATU commit/push --
+    lebih efisien daripada publish_video_to_github dipanggil berkali-kali.
+    local_paths_and_filenames: list of (local_path, filename)
+    Return list URL publik jsDelivr, urutannya sama seperti input.
+    """
+    if not GITHUB_USERNAME or not GITHUB_REPO:
+        raise RuntimeError("GITHUB_USERNAME / GITHUB_REPO belum diset di .env")
+
+    for local_path, filename in local_paths_and_filenames:
+        dest_path = os.path.join(REPO_DIR, "media", filename)
+        if os.path.abspath(local_path) != os.path.abspath(dest_path):
+            _run(f"cp '{local_path}' '{dest_path}'")
+
+    _run("git add -A")
+    _run("git commit -m 'Auto: tambah carousel images' --allow-empty")
+    _run("git pull --rebase")
+    _run(f"git push origin {GITHUB_BRANCH}")
+
+    urls = []
+    for _, filename in local_paths_and_filenames:
+        url = (
+            f"https://cdn.jsdelivr.net/gh/{GITHUB_USERNAME}/{GITHUB_REPO}"
+            f"@{GITHUB_BRANCH}/media/{filename}"
+        )
+        _wait_until_accessible(url)
+        urls.append(url)
+
+    return urls
+
+
+def cleanup_files(filenames):
+    """Hapus beberapa file sekaligus dari repo (buat cleanup carousel images)."""
+    for filename in filenames:
+        dest_path = os.path.join(REPO_DIR, "media", filename)
+        if os.path.exists(dest_path):
+            os.remove(dest_path)
+    _run("git add -A")
+    _run("git commit -m 'Auto: hapus carousel images lama' --allow-empty")
+    _run("git pull --rebase")
+    _run(f"git push origin {GITHUB_BRANCH}")
+
+
 def publish_video_to_github(local_video_path, filename):
     """
     Copy video ke folder media/, commit, push ke GitHub.

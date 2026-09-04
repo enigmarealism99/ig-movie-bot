@@ -24,22 +24,26 @@ def get_random_movie(pool="mixed"):
     """
     pool: 'korea', 'western', atau 'mixed' (default, random pilih salah satu)
     Return dict film dasar (belum termasuk images/credits).
+
+    Filter konten: exclude adult content, exclude film exploitation/obscure
+    (vote_count rendah sering korelasi sama poster/backdrop yang gak pantas),
+    dan exclude genre Horror (18930) yang gambarnya sering gore/ekstrem.
     """
     if pool == "mixed":
         pool = random.choice(["korea", "western"])
 
+    base_params = {
+        "sort_by": "popularity.desc",
+        "page": random.randint(1, 5),
+        "include_adult": "false",
+        "vote_count.gte": 100,  # exclude film obscure/exploitation, hanya film yang cukup dikenal
+        "without_genres": "27",  # exclude genre Horror (poster/backdrop sering gore/ekstrem)
+    }
+
     if pool == "korea":
-        params = {
-            "with_original_language": "ko",
-            "sort_by": "popularity.desc",
-            "page": random.randint(1, 5),
-        }
+        params = {**base_params, "with_original_language": "ko"}
     else:
-        params = {
-            "with_original_language": "en",
-            "sort_by": "popularity.desc",
-            "page": random.randint(1, 5),
-        }
+        params = {**base_params, "with_original_language": "en"}
 
     data = _get("/discover/movie", params)
     results = data.get("results", [])
@@ -179,3 +183,90 @@ def get_actor_trivia():
         "images": images,
         "facts": facts,
     }
+
+
+GENRE_IDS = {
+    "action": 28, "comedy": 35, "drama": 18, "horror": 27,
+    "thriller": 53, "romance": 10749, "scifi": 878, "animation": 16,
+    "fantasy": 14, "crime": 80,
+}
+
+# Genre yang gambarnya berisiko ekstrem -- carousel jenis ini pakai POSTER
+# resmi aja (bukan backdrop/scene still) biar visualnya tetap aman
+SENSITIVE_GENRES = {"horror", "thriller", "crime"}
+
+
+def _movie_poster_url(movie):
+    if movie.get("poster_path"):
+        return f"{IMG_BASE}{movie['poster_path']}"
+    return None
+
+
+def get_upcoming_movies(limit=5):
+    """Film yang belum rilis, buat carousel 'coming soon'."""
+    from datetime import date
+    today = date.today().isoformat()
+    data = _get("/discover/movie", {
+        "sort_by": "popularity.desc",
+        "primary_release_date.gte": today,
+        "include_adult": "false",
+    })
+    results = [m for m in data.get("results", []) if _movie_poster_url(m)]
+    return results[:limit]
+
+
+def get_top_by_genre(genre_name, limit=5):
+    """
+    Top film by genre tertentu (misal 'horror terbaik'). Genre sensitif
+    otomatis dibatasi pakai vote_count tinggi biar yang muncul film
+    mainstream yang dikenal luas, bukan exploitation/obscure.
+    """
+    genre_id = GENRE_IDS.get(genre_name.lower())
+    if not genre_id:
+        raise ValueError(f"Genre '{genre_name}' gak dikenal, pilihan: {list(GENRE_IDS.keys())}")
+
+    min_votes = 500 if genre_name.lower() in SENSITIVE_GENRES else 200
+    data = _get("/discover/movie", {
+        "with_genres": genre_id,
+        "sort_by": "vote_average.desc",
+        "vote_count.gte": min_votes,
+        "include_adult": "false",
+    })
+    results = [m for m in data.get("results", []) if _movie_poster_url(m)]
+    return results[:limit]
+
+
+def get_budget_flops(limit=5, pool_size=20):
+    """
+    Film budget besar tapi revenue kurang dari budget (box office flop).
+    TMDB discover gak support filter budget langsung, jadi ambil pool film
+    populer dulu, baru disaring satu-satu lewat detail.
+    """
+    candidates = []
+    for page in range(1, 3):
+        data = _get("/discover/movie", {
+            "sort_by": "popularity.desc", "page": page,
+            "include_adult": "false", "vote_count.gte": 200,
+        })
+        candidates.extend(data.get("results", []))
+        if len(candidates) >= pool_size:
+            break
+
+    flops = []
+    for movie in candidates[:pool_size]:
+        details = get_movie_details(movie["id"])
+        budget = details.get("budget", 0)
+        revenue = details.get("revenue", 0)
+        if budget >= 50_000_000 and 0 < revenue < budget and _movie_poster_url(details):
+            flops.append(details)
+        if len(flops) >= limit:
+            break
+
+    return flops
+
+
+def get_weekly_top(limit=5):
+    """Film terpopuler minggu ini (trending)."""
+    data = _get("/trending/movie/week")
+    results = [m for m in data.get("results", []) if _movie_poster_url(m) and not m.get("adult")]
+    return results[:limit]

@@ -31,7 +31,7 @@ def _validate_video(path):
         return (False, str(e))
 
 
-def _download_video(url, path, retries=10):
+def _download_video(url, path, retries=3):
     for i in range(retries):
         try:
             r = requests.get(url, timeout=60, stream=True)
@@ -40,10 +40,9 @@ def _download_video(url, path, retries=10):
                 for chunk in r.iter_content(8192):
                     f.write(chunk)
             return True
-        except Exception as e:
-            print(f"   (percobaan download {i+1}/{retries} gagal: {e})")
+        except:
             if i < retries - 1:
-                time.sleep(10)
+                time.sleep(5)
     return False
 
 
@@ -112,6 +111,60 @@ def publish_reel(video_url, caption, local_video_path=None, max_retries=3, retry
         os.remove(temp_path)
 
     print(f"✅ Published: {result.get('id')}")
+    return result
+
+
+def publish_carousel(image_urls, caption, max_retries=3, retry_delay=15):
+    """
+    Publish carousel (multi-gambar) ke Instagram.
+    Alur beda dari Reels: tiap gambar jadi child container dulu
+    (is_carousel_item=true), baru digabung jadi 1 parent container
+    (media_type=CAROUSEL), baru di-publish.
+    """
+    if len(image_urls) < 2:
+        raise ValueError("Carousel butuh minimal 2 gambar")
+    if len(image_urls) > 10:
+        image_urls = image_urls[:10]  # limit Instagram
+
+    child_ids = []
+    for i, url in enumerate(image_urls):
+        payload = {
+            "image_url": url,
+            "is_carousel_item": "true",
+            "access_token": IG_ACCESS_TOKEN,
+        }
+        child_id = None
+        for attempt in range(max_retries):
+            r = requests.post(f"{GRAPH_BASE}/{IG_USER_ID}/media", data=payload, timeout=60)
+            if r.status_code == 200:
+                child_id = r.json()["id"]
+                break
+            print(f"⚠️ Slide {i+1} attempt {attempt+1}/{max_retries}: {r.text[:200]}")
+            time.sleep(retry_delay)
+        if not child_id:
+            raise RuntimeError(f"Gagal buat child container buat slide {i+1}")
+        child_ids.append(child_id)
+        print(f"✅ Slide {i+1}/{len(image_urls)} container: {child_id}")
+
+    # Buat parent carousel container
+    parent_payload = {
+        "media_type": "CAROUSEL",
+        "children": ",".join(child_ids),
+        "caption": caption,
+        "access_token": IG_ACCESS_TOKEN,
+    }
+    r = requests.post(f"{GRAPH_BASE}/{IG_USER_ID}/media", data=parent_payload, timeout=60)
+    r.raise_for_status()
+    parent_id = r.json()["id"]
+    print(f"✅ Parent carousel container: {parent_id}")
+
+    # Publish
+    r = requests.post(f"{GRAPH_BASE}/{IG_USER_ID}/media_publish",
+                     data={"creation_id": parent_id, "access_token": IG_ACCESS_TOKEN},
+                     timeout=60)
+    r.raise_for_status()
+    result = r.json()
+    print(f"✅ Carousel published: {result.get('id')}")
     return result
 
 
