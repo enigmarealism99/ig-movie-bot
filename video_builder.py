@@ -141,34 +141,20 @@ def build_slideshow(urls, output_path, mode="trivia", title_text=None, trivia_te
             imgs.append(dest)
 
         n = len(imgs)
-        total_dur = n * 3
-
-        # TTS Audio
-        audio_path = os.path.join(tmpdir, "voiceover.mp3")
-        tts_ok = False
-        if mode == "trivia" and trivia_text:
-            tts_text = f"{title_text}. {trivia_text}" if title_text else trivia_text
-            tts_ok = _generate_tts(tts_text, audio_path)
-
-        if not tts_ok:
-            audio_path = os.path.join(tmpdir, "silent.mp3")
-            subprocess.run(["ffmpeg", "-y", "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100",
-                          "-t", str(total_dur), "-c:a", "aac", "-b:a", "128k", audio_path], capture_output=True)
-
-        audio_dur = _get_audio_duration(audio_path) or total_dur
+        total_dur = n * 3  # tanpa voiceover, durasi tetap 3 detik per gambar
 
         # Build clips
         clips = []
         for i, img in enumerate(imgs):
             clip_out = os.path.join(tmpdir, f"clip_{i}.mp4")
-            dur = audio_dur / n
+            dur = total_dur / n
 
             if mode == "guess" and i != n - 1:
                 blurred = os.path.join(tmpdir, f"blur_{i}.jpg")
                 subprocess.run(["ffmpeg", "-y", "-i", img, "-vf", f"gblur=sigma={max(20-i*6,5)}", blurred], capture_output=True)
                 img = blurred
 
-            if not _build_single_frame(img, clip_out, dur, 
+            if not _build_single_frame(img, clip_out, dur,
                                        trivia_text if mode=="trivia" else None,
                                        title_text if i==0 else None,
                                        i % 2 == 0):
@@ -184,26 +170,28 @@ def build_slideshow(urls, output_path, mode="trivia", title_text=None, trivia_te
         silent = os.path.join(tmpdir, "silent.mp4")
         subprocess.run(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", concat, "-c", "copy", silent], check=True, capture_output=True)
 
-        # Merge with audio (+ musik latar kalau ada file di folder music/)
+        # Audio: musik latar random (looped/trimmed ke durasi video), tanpa voiceover.
+        # Kalau gak ada file musik, tetap kasih track senyap (Reels wajib ada audio track).
         music_path = _pick_background_music()
 
         if music_path:
             cmd = [
                 "ffmpeg", "-y",
-                "-i", silent, "-i", audio_path,
+                "-i", silent,
                 "-stream_loop", "-1", "-i", music_path,
-                "-filter_complex",
-                "[1:a]volume=1.0[voice];[2:a]volume=0.12[music];"
-                "[voice][music]amix=inputs=2:duration=first:dropout_transition=2[aout]",
-                "-map", "0:v:0", "-map", "[aout]",
+                "-map", "0:v:0", "-map", "1:a:0",
                 "-c:v", "libx264", "-preset", "fast", "-crf", "23",
                 "-pix_fmt", "yuv420p", "-r", str(FPS),
+                "-af", "volume=0.6",
                 "-c:a", "aac", "-b:a", "128k", "-ar", "44100",
                 "-shortest", "-movflags", "+faststart", output_path,
             ]
         else:
             cmd = [
-                "ffmpeg", "-y", "-i", silent, "-i", audio_path,
+                "ffmpeg", "-y",
+                "-i", silent,
+                "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100",
+                "-map", "0:v:0", "-map", "1:a:0",
                 "-c:v", "libx264", "-preset", "fast", "-crf", "23",
                 "-pix_fmt", "yuv420p", "-r", str(FPS),
                 "-c:a", "aac", "-b:a", "128k", "-ar", "44100",
