@@ -1,129 +1,57 @@
-"""caption_generator.py - FINAL
-Caption Instagram untuk trivia film, aktor, & guess-the-movie.
+"""
+caption_generator.py
+Susun caption Instagram untuk 2 tipe konten: trivia card & guess-the-movie.
 """
 
 import random
 
 TRIVIA_HOOKS = [
-    "🎬 Tau gak sih fakta ini soal \"{title}\"?",
-    "🍿 Trivia time! \"{title}\" ternyata...",
-    "🎥 Sebelum nonton \"{title}\", cek fakta ini dulu!",
-    "💡 Fakta menarik dari \"{title}\" yang jarang diketahui!",
-    "🔥 Film \"{title}\" punya cerita di balik layar yang keren!",
-]
-
-ACTOR_HOOKS = [
-    "🌟 Tau gak sih tentang {name}?",
-    "🎭 Fakta menarik soal {name}!",
-    "⭐ Aktor {name} ternyata...",
-    "🎬 Di balik layar {name}...",
+    "Tau gak sih fakta ini soal \"{title}\"? \U0001F440",
+    "Trivia time! \"{title}\" ternyata... \U0001F3AC",
+    "Sebelum nonton \"{title}\", cek fakta ini dulu \U0001F447",
 ]
 
 GUESS_HOOKS = [
-    "🤔 Tebak judul film dari potongan gambar ini!",
-    "🎬 Cuma butuh 1 scene buat nebak filmnya? Coba deh!",
-    "👀 Siapa yang bisa tebak sebelum reveal? Komen di bawah!",
-    "🍿 Clue: Film populer ini pernah trending worldwide!",
-    "🎯 Tebak filmnya! Hint ada di visualnya~",
-]
-
-CTA_POOL = [
-    "Follow untuk trivia film tiap hari! 🎬",
-    "Tag teman yang harus tau fakta ini! 👇",
-    "Save post ini buat referensi nonton nanti! 📌",
-    "Komen film apa yang mau di-trivia-in next! 💬",
-    "Share ke story biar temanmu ikutan tau! 📤",
-]
-
-BAIT_COMMENTS = [
-    "Siapa yang udah nonton ini? 🙋‍♂️",
-    "Film ini worth it gak sih menurut kalian? 🤔",
-    "Aku baru tau fakta no. 3! 😱",
-    "Kalian tim nonton di bioskop atau streaming? 🍿",
-    "Next film apa yang mau di-trivia-in? Komen! 👇",
-    "Fakta paling keren yang mana menurut kalian? 💬",
-    "Aktor/aktris favorit kalian di film ini siapa? 🌟",
-    "Rating berapa nih film menurut kalian? ⭐",
+    "Tebak judul film dari potongan gambar ini di kolom komentar! \U0001F914",
+    "Cuma butuh 1 scene buat nebak filmnya? Coba deh \U0001F440",
+    "Siapa yang bisa tebak sebelum reveal terakhir? \U0001F447",
 ]
 
 HASHTAG_POOL = [
     "#movierecommendation", "#filmkorea", "#hollywoodmovie", "#trivia",
-    "#guessthemovie", "#movienight", "#koreanmovie", "#westernmovie",
-    "#reels", "#movietrivia", "#filmbarurelease", "#moviefacts",
-    "#filmrecommendation", "#movielover", "#sinopsisfilm",
-    "#netflixindonesia", "#disneyplus", "#filmviral", "#cinematrivia",
-    "#filmindonesia", "#filmasia", "#drakor", "#bollywood", "#japanmovie",
-    "#chinesemovie", "#moviequiz", "#filmterbaru", "#nontonbareng",
-    "#actortrivia", "#behindthescenes", "#filmtrivia", "#moviebuff",
+    "#guesstheMovie", "#movienight", "#koreanmovie", "#westernmovie",
+    "#reels", "#movietrivia",
 ]
 
-SOURCE_HASHTAGS = {
-    "indonesia": ["#filmindonesia", "#moviendonesia", "#filmasliindonesia", "#sinemaindonesia"],
-    "korea": ["#filmkorea", "#koreanmovie", "#drakor", "#kdrama"],
-    "japan": ["#filmjepang", "#japanmovie", "#japanesefilm", "#animeliveaction"],
-    "india": ["#bollywood", "#filmindia", "#indianmovie", "#bollywoodmovie"],
-    "china": ["#filmchina", "#chinesemovie", "#mandarinfilm", "#cdrama"],
-    "western": ["#hollywoodmovie", "#westernmovie", "#boxoffice", "#hollywood"],
-}
 
-
-def _truncate_facts(facts, max_chars=600):
-    result, cur = [], 0
-    for f in facts:
-        line = f"• {f}"
-        if cur + len(line) > max_chars:
-            break
-        result.append(f)
-        cur += len(line) + 1
-    return result
-
-
-def build_trivia_caption(title, facts, source="western"):
-    facts = _truncate_facts(facts)
+def build_trivia_caption(title, facts, source="korea"):
     hook = random.choice(TRIVIA_HOOKS).format(title=title)
-    body = "\n".join(f"• {f}" for f in facts[:5])
-    cta = random.choice(CTA_POOL)
-
-    base = ["#movietrivia", "#trivia", "#reels"]
-    base.extend(SOURCE_HASHTAGS.get(source, SOURCE_HASHTAGS["western"])[:2])
-    extra = random.sample([t for t in HASHTAG_POOL if t not in base], 3)
-    tags = " ".join(base + extra)
-
-    caption = f"{hook}\n\n{body}\n\n{cta}\n\n{tags}"
-    print(f"📊 Panjang caption: {len(caption)} char")
-    return caption
+    body = "\n".join(f"\u2022 {f}" for f in facts[:5])
+    tags = " ".join(random.sample(HASHTAG_POOL, 5))
+    return f"{hook}\n\n{body}\n\n{tags}"
 
 
-def build_actor_caption(name, facts, source="western"):
-    facts = _truncate_facts(facts)
-    hook = random.choice(ACTOR_HOOKS).format(name=name)
-    body = "\n".join(f"• {f}" for f in facts[:5])
-    cta = random.choice(CTA_POOL)
-
-    base = ["#actortrivia", "#trivia", "#reels", "#behindthescenes"]
-    extra = random.sample([t for t in HASHTAG_POOL if t not in base], 4)
-    tags = " ".join(base + extra)
-
-    return f"{hook}\n\n{body}\n\n{cta}\n\n{tags}"
-
-
-def build_guess_caption(title, source="western"):
+def build_guess_caption(title, source="korea"):
     hook = random.choice(GUESS_HOOKS)
-    cta = random.choice([
-        "Komen jawabanmu di bawah! 👇",
-        "Tebak dulu baru scroll ke bawah! 😏",
-        "Jangan curang! Komen sebelum liat reveal! 🙈",
-    ])
-    reveal = "💡 Reveal: Slide terakhir!"
-
-    base = ["#guessthemovie", "#reels", "#moviequiz"]
-    base.extend(SOURCE_HASHTAGS.get(source, SOURCE_HASHTAGS["western"])[:2])
-    extra = random.sample([t for t in HASHTAG_POOL if t not in base], 3)
-    tags = " ".join(base + extra)
-
-    return f"{hook}\n\n{cta}\n\n{reveal}\n\n{tags}"
+    reveal_note = "Jawabannya ada di akhir video \U0001F447"
+    tags = " ".join(random.sample(HASHTAG_POOL, 5))
+    return f"{hook}\n\n{reveal_note}\n\nJudul: {title}\n\n{tags}"
 
 
-def get_bait_comment():
-    """Ambil komentar pancingan random."""
-    return random.choice(BAIT_COMMENTS)
+ACTOR_HOOKS = [
+    "Tau gak sih fakta menarik soal {name}? \U0001F31F",
+    "{name} ternyata punya cerita menarik di baliknya \U0001F3AC",
+    "Kenalan yuk lebih dalam sama {name} \U0001F447",
+]
+
+ACTOR_HASHTAG_POOL = [
+    "#aktor", "#aktris", "#hollywood", "#trivia", "#behindthescenes",
+    "#movienight", "#reels", "#didyouknow", "#celebritytrivia", "#filmfacts",
+]
+
+
+def build_actor_caption(name, facts):
+    hook = random.choice(ACTOR_HOOKS).format(name=name)
+    body = "\n".join(f"\u2022 {f}" for f in facts[:5])
+    tags = " ".join(random.sample(ACTOR_HASHTAG_POOL, 5))
+    return f"{hook}\n\n{body}\n\n{tags}"

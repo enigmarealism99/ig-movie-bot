@@ -113,3 +113,58 @@ def build_trivia_facts(details):
         facts.append(f"Sutradara: {director}")
 
     return facts
+
+
+def get_actor_trivia():
+    """
+    Ambil aktor populer random dari TMDB, plus foto profil (portrait, cocok
+    langsung buat frame vertikal, gak perlu letterbox kayak backdrop film)
+    dan beberapa fakta menarik. Return dict: name, images, facts.
+    """
+    page = random.randint(1, 5)
+    data = _get("/person/popular", {"page": page})
+    results = data.get("results", [])
+    if not results:
+        raise RuntimeError("TMDB tidak mengembalikan aktor, cek API key / parameter")
+    person = random.choice(results)
+    person_id = person["id"]
+
+    details = _get(f"/person/{person_id}", {"append_to_response": "combined_credits"})
+    images_data = _get(f"/person/{person_id}/images")
+
+    profiles = images_data.get("profiles", [])
+    profiles.sort(key=lambda x: x.get("vote_average", 0), reverse=True)
+    chosen = profiles[:5] if profiles else []
+    images = [f"{IMG_BASE}{p['file_path']}" for p in chosen]
+    if not images and details.get("profile_path"):
+        images = [f"{IMG_BASE}{details['profile_path']}"]
+    if not images:
+        raise RuntimeError(f"Tidak ada foto untuk person_id {person_id}")
+
+    facts = []
+    if details.get("birthday"):
+        facts.append(f"Lahir: {details['birthday']}")
+    if details.get("place_of_birth"):
+        facts.append(f"Asal: {details['place_of_birth']}")
+    if details.get("known_for_department"):
+        facts.append(f"Dikenal sebagai: {details['known_for_department']}")
+
+    known_for = details.get("combined_credits", {}).get("cast", [])
+    known_for_sorted = sorted(known_for, key=lambda x: x.get("popularity", 0), reverse=True)[:3]
+    titles = [c.get("title") or c.get("name") for c in known_for_sorted if c.get("title") or c.get("name")]
+    if titles:
+        facts.append(f"Dikenal lewat: {', '.join(titles)}")
+
+    bio = details.get("biography", "")
+    if bio:
+        snippet = bio[:200].rsplit(" ", 1)[0] + "..." if len(bio) > 200 else bio
+        facts.append(snippet)
+
+    if not facts:
+        facts = ["Salah satu aktor populer di industri film."]
+
+    return {
+        "name": details.get("name", "Unknown"),
+        "images": images,
+        "facts": facts,
+    }
