@@ -115,6 +115,17 @@ def build_trivia_facts(details):
     return facts
 
 
+def search_movie(query, limit=5):
+    """
+    Cari film berdasarkan judul/kata kunci (dipakai dm_handler.py buat
+    balas DM user yang nanya soal film tertentu).
+    Return list dict film mentah dari TMDB (id, title, overview, dst).
+    """
+    data = _get("/search/movie", {"query": query, "language": "id-ID"})
+    results = data.get("results", [])
+    return results[:limit]
+
+
 def get_actor_trivia():
     """
     Ambil aktor populer random dari TMDB, plus foto profil (portrait, cocok
