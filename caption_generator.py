@@ -55,3 +55,17 @@ def build_actor_caption(name, facts):
     body = "\n".join(f"\u2022 {f}" for f in facts[:5])
     tags = " ".join(random.sample(ACTOR_HASHTAG_POOL, 5))
     return f"{hook}\n\n{body}\n\n{tags}"
+
+
+BAIT_COMMENTS = [
+    "Siapa yang udah pernah nonton ini? Komen di bawah! \U0001F447",
+    "Tag temen yang wajib nonton film ini \U0001F440",
+    "Setuju gak sama fakta ini? Kasih tau pendapat kalian \U0001F447",
+    "Drop emoji kalau kalian suka genre ini! \U0001F3AC",
+    "Menurut kalian gimana? Komen ya \U0001F447",
+]
+
+
+def get_bait_comment():
+    """Komentar pancingan (engagement bait) buat dipost otomatis setelah publish."""
+    return random.choice(BAIT_COMMENTS)
