@@ -31,7 +31,7 @@ def _validate_video(path):
         return (False, str(e))
 
 
-def _download_video(url, path, retries=3):
+def _download_video(url, path, retries=10):
     for i in range(retries):
         try:
             r = requests.get(url, timeout=60, stream=True)
@@ -40,9 +40,10 @@ def _download_video(url, path, retries=3):
                 for chunk in r.iter_content(8192):
                     f.write(chunk)
             return True
-        except:
+        except Exception as e:
+            print(f"   (percobaan download {i+1}/{retries} gagal: {e})")
             if i < retries - 1:
-                time.sleep(5)
+                time.sleep(10)
     return False
 
 

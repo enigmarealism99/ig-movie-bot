@@ -62,15 +62,19 @@ def publish_video_to_github(local_video_path, filename):
 
 def _wait_until_accessible(url, max_attempts=15, delay=10):
     """
-    Poll URL pakai HEAD request sampai dapat 200 OK, atau nyerah setelah
-    max_attempts. jsDelivr cold-cache file baru biasanya butuh beberapa
-    puluh detik sampai beberapa menit di percobaan pertama.
+    Poll URL pakai GET request (bukan HEAD -- jsDelivr kadang cuma warm cache
+    dari GET beneran) sampai dapat 200 OK dengan body yang valid, atau
+    nyerah setelah max_attempts.
     """
     for attempt in range(max_attempts):
         try:
-            resp = requests.head(url, timeout=15)
+            resp = requests.get(url, timeout=20, stream=True)
             if resp.status_code == 200:
-                return True
+                # baca sedikit body buat mastiin beneran ke-download, bukan cuma header
+                chunk = next(resp.iter_content(chunk_size=1024), None)
+                resp.close()
+                if chunk:
+                    return True
         except requests.RequestException:
             pass
         time.sleep(delay)
