@@ -53,8 +53,21 @@ def _get_audio_duration(path):
 
 def _build_single_frame(img, out, duration, trivia=None, title=None, zoom_in=True):
     frames = int(duration * FPS)
-    z = "min(zoom+0.0008,1.1)" if zoom_in else "if(lte(zoom,1.0),1.1,max(1.001,zoom-0.0008))"
-    vf = f"scale=iw*4:ih*4,zoompan=z='{z}':d={frames}:s={WIDTH}x{HEIGHT}:fps={FPS},format=yuv420p"
+    z = "min(zoom+0.0008,1.12)" if zoom_in else "if(lte(zoom,1.0),1.12,max(1.001,zoom-0.0008))"
+
+    # Teknik 'blurred letterbox': gambar ditampilkan UTUH di tengah (gak
+    # dipotong), background blur dari gambar yang sama ngisi ruang kosong --
+    # bukan upscale+crop paksa yang bikin gambar landscape kepotong sempit
+    # ekstrem waktu dipaksa isi frame portrait 9:16.
+    filter_complex = (
+        f"split=2[bg][fg];"
+        f"[bg]scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=increase,"
+        f"crop={WIDTH}:{HEIGHT},gblur=sigma=40,eq=brightness=-0.12[bgblur];"
+        f"[fg]scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=decrease[fgfit];"
+        f"[bgblur][fgfit]overlay=(W-w)/2:(H-h)/2[comp];"
+        f"[comp]zoompan=z='{z}':d={frames}:s={WIDTH}x{HEIGHT}:fps={FPS},format=yuv420p[zoomed]"
+    )
+    last = "zoomed"
 
     texts = []
     if title and FONT_PATH:
@@ -65,11 +78,17 @@ def _build_single_frame(img, out, duration, trivia=None, title=None, zoom_in=Tru
         wrapped = '\\n'.join(textwrap.wrap(st, width=30))
         texts.append(f"drawtext=fontfile={FONT_PATH}:text='{wrapped}':fontcolor=white:fontsize=36:borderw=3:bordercolor=black@0.8:x=(w-text_w)/2:y=h-280:line_spacing=6")
 
-    if texts:
-        vf += "," + ",".join(texts)
+    for idx, txt_filter in enumerate(texts):
+        new_label = f"txt{idx}"
+        filter_complex += f";[{last}]{txt_filter}[{new_label}]"
+        last = new_label
 
-    cmd = ["ffmpeg", "-y", "-loop", "1", "-i", img, "-vf", vf, "-t", str(duration), "-pix_fmt", "yuv420p", "-r", str(FPS), out]
-    return subprocess.run(cmd, capture_output=True, text=True).returncode == 0
+    cmd = ["ffmpeg", "-y", "-loop", "1", "-i", img, "-filter_complex", filter_complex,
+           "-map", f"[{last}]", "-t", str(duration), "-pix_fmt", "yuv420p", "-r", str(FPS), out]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        print(f"ffmpeg error (clip): {result.stderr[-500:]}")
+    return result.returncode == 0
 
 
 def build_slideshow(urls, output_path, mode="trivia", title_text=None, trivia_text=None):
