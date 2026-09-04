@@ -52,7 +52,9 @@ def publish_reel(video_url, caption, local_video_path=None, max_retries=3, retry
     video_path = local_video_path
 
     if not video_path or not os.path.exists(video_path):
-        temp_path = f"/tmp/ig_video_{os.getpid()}.mp4"
+        media_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "media")
+        os.makedirs(media_dir, exist_ok=True)
+        temp_path = os.path.join(media_dir, f"_tmp_ig_video_{os.getpid()}.mp4")
         if not _download_video(video_url, temp_path):
             raise RuntimeError("Gagal download video")
         video_path = temp_path
