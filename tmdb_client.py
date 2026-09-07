@@ -236,17 +236,17 @@ def get_top_by_genre(genre_name, limit=5):
     return results[:limit]
 
 
-def get_budget_flops(limit=5, pool_size=20):
+def get_budget_flops(limit=5, pool_size=60):
     """
     Film budget besar tapi revenue kurang dari budget (box office flop).
     TMDB discover gak support filter budget langsung, jadi ambil pool film
-    populer dulu, baru disaring satu-satu lewat detail.
+    populer dulu (beberapa halaman), baru disaring satu-satu lewat detail.
     """
     candidates = []
-    for page in range(1, 3):
+    for page in range(1, 6):
         data = _get("/discover/movie", {
             "sort_by": "popularity.desc", "page": page,
-            "include_adult": "false", "vote_count.gte": 200,
+            "include_adult": "false", "vote_count.gte": 100,
         })
         candidates.extend(data.get("results", []))
         if len(candidates) >= pool_size:
@@ -254,10 +254,13 @@ def get_budget_flops(limit=5, pool_size=20):
 
     flops = []
     for movie in candidates[:pool_size]:
-        details = get_movie_details(movie["id"])
+        try:
+            details = get_movie_details(movie["id"])
+        except Exception:
+            continue
         budget = details.get("budget", 0)
         revenue = details.get("revenue", 0)
-        if budget >= 50_000_000 and 0 < revenue < budget and _movie_poster_url(details):
+        if budget >= 30_000_000 and 0 < revenue < budget and _movie_poster_url(details):
             flops.append(details)
         if len(flops) >= limit:
             break
@@ -270,3 +273,58 @@ def get_weekly_top(limit=5):
     data = _get("/trending/movie/week")
     results = [m for m in data.get("results", []) if _movie_poster_url(m) and not m.get("adult")]
     return results[:limit]
+
+
+def get_upcoming_korean(limit=10):
+    """Film Korea yang belum rilis - dipakai konten 'bocoran' di WA/FB."""
+    from datetime import date
+    today = date.today().isoformat()
+    data = _get("/discover/movie", {
+        "sort_by": "primary_release_date.asc",
+        "primary_release_date.gte": today,
+        "with_original_language": "ko",
+        "include_adult": "false",
+    })
+    results = [m for m in data.get("results", []) if _movie_poster_url(m)]
+    return results[:limit]
+
+
+def get_horror_vs_pair(pool_size=60):
+    """
+    2 film horror Korea populer buat konten VS: budget besar ('mahal')
+    vs budget kecil ('murah'). Sama pola kayak get_budget_flops - discover
+    dulu, baru disaring detail satu-satu karena TMDB gak support filter
+    budget langsung di endpoint discover.
+    """
+    candidates = []
+    for page in range(1, 6):
+        data = _get("/discover/movie", {
+            "with_genres": 27,  # Horror
+            "with_original_language": "ko",
+            "sort_by": "popularity.desc",
+            "page": page,
+            "include_adult": "false",
+            "vote_count.gte": 100,
+        })
+        candidates.extend(data.get("results", []))
+        if len(candidates) >= pool_size:
+            break
+
+    detailed = []
+    for movie in candidates[:pool_size]:
+        try:
+            detailed.append(get_movie_details(movie["id"]))
+        except Exception:
+            continue
+
+    with_budget = [d for d in detailed if d.get("budget", 0) > 0]
+    if len(with_budget) >= 2:
+        with_budget.sort(key=lambda d: d["budget"], reverse=True)
+        return with_budget[0], with_budget[-1]
+
+    # Fallback kalau data budget TMDB kurang lengkap: pakai vote_count
+    # sebagai proxy skala rilis (bukan sempurna, tapi masuk akal)
+    if len(detailed) < 2:
+        raise RuntimeError("Gak cukup film horror Korea buat dipasangkan VS")
+    detailed.sort(key=lambda d: d.get("vote_count", 0), reverse=True)
+    return detailed[0], detailed[len(detailed) // 2]

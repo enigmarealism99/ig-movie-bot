@@ -196,3 +196,54 @@ def build_list_carousel(items, list_title, output_dir, accent_key="default"):
         paths.append(path)
 
     return paths
+
+
+# ---------- "Movie Content Factory": carousel per-sudut, isinya ditulis manual/dibantu Claude ----------
+
+ANGLE_ACCENT_COLORS = {
+    "mystery": (150, 20, 60), "hidden_meaning": (90, 40, 160), "hidden_detail": (30, 130, 150),
+    "what_would_you_do": (230, 140, 20), "character": (200, 30, 100), "ending_theory": (60, 90, 200),
+    "cultural_remix": (230, 180, 20), "default": (230, 30, 60),
+}
+
+
+def build_angle_carousel(movie_title, poster_url, angle_label, hook, slides, output_dir, accent_key="default"):
+    """
+    Carousel 1 film - 1 sudut cerita (Mystery Hook, Hidden Meaning, dst).
+    hook   -> headline slide 1 (cover)
+    slides -> list teks, 1 slide per elemen (isinya ditulis manual/dibantu Claude,
+              bukan digenerate otomatis dari data TMDB - butuh pemahaman cerita).
+    """
+    os.makedirs(output_dir, exist_ok=True)
+    paths = []
+    accent = ANGLE_ACCENT_COLORS.get(accent_key, ANGLE_ACCENT_COLORS["default"])
+
+    cover_img = _download_image(poster_url)
+    cover = _blurred_letterbox(cover_img)
+    cover = _add_gradient_overlay(cover, position="bottom", strength=0.7)
+    draw = ImageDraw.Draw(cover)
+    font_badge = _load_font(FONT_BOLD, 28)
+    _accent_badge(draw, angle_label.upper(), 50, 60, font_badge, bg=accent)
+    font_hook = _load_font(FONT_BOLD, 54)
+    _draw_wrapped_text(draw, hook, HEIGHT - 280, font_hook, width_chars=20)
+    font_sub = _load_font(FONT_REGULAR, 30)
+    _draw_wrapped_text(draw, movie_title, HEIGHT - 90, font_sub, width_chars=34)
+    cover_path = os.path.join(output_dir, "slide_1_cover.jpg")
+    cover.save(cover_path, quality=90)
+    paths.append(cover_path)
+
+    bg_deco = _fullbleed_blur_bg(cover_img, darken=0.35, blur=55)
+    font_body = _load_font(FONT_BOLD, 42)
+    for i, slide_text in enumerate(slides):
+        img = bg_deco.copy().convert("RGB")
+        img = _add_gradient_overlay(img, position="bottom", strength=0.6)
+        img = _add_gradient_overlay(img, position="top", strength=0.35)
+        draw = ImageDraw.Draw(img)
+        font_num = _load_font(FONT_BOLD, 30)
+        _accent_badge(draw, f"{i + 1}/{len(slides)}", 50, 60, font_num, bg=accent)
+        _draw_wrapped_text(draw, slide_text, HEIGHT // 2 - 60, font_body, width_chars=24)
+        path = os.path.join(output_dir, f"slide_{i + 2}.jpg")
+        img.save(path, quality=90)
+        paths.append(path)
+
+    return paths

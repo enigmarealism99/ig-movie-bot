@@ -126,7 +126,41 @@ def _build_single_frame(img, out, duration, trivia=None, title=None, zoom_in=Tru
     return result.returncode == 0
 
 
-def build_slideshow(urls, output_path, mode="trivia", title_text=None, trivia_text=None):
+def _build_outro_frame(bg_img, out, duration, text):
+    """Frame penutup: background blur gelap + teks CTA gede di tengah,
+    dipakai buat 'bocoran slot berikutnya' (misal: 'Polling besok di Channel WA')."""
+    filter_complex = (
+        f"scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=increase,"
+        f"crop={WIDTH}:{HEIGHT},gblur=sigma=30,eq=brightness=-0.25,format=yuv420p[bg]"
+    )
+    last = "bg"
+    if FONT_PATH:
+        st = text.replace("'", "\\'").replace(":", "\\:").replace(",", "\\,")
+        wrapped = '\\n'.join(textwrap.wrap(st, width=26))
+        filter_complex += (
+            f";[bg]drawtext=fontfile={FONT_PATH}:text='{wrapped}':fontcolor=white:"
+            f"fontsize=50:borderw=4:bordercolor=black@0.8:x=(w-text_w)/2:"
+            f"y=(h-text_h)/2:line_spacing=10[txt]"
+        )
+        last = "txt"
+    cmd = ["ffmpeg", "-y", "-loop", "1", "-i", bg_img, "-filter_complex", filter_complex,
+           "-map", f"[{last}]", "-t", str(duration), "-pix_fmt", "yuv420p", "-r", str(FPS), out]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        print(f"ffmpeg error (outro): {result.stderr[-500:]}")
+    return result.returncode == 0
+
+
+def build_slideshow(urls, output_path, mode="trivia", title_text=None, trivia_text=None,
+                     title_text_b=None, split_index=None, outro_text=None):
+    """
+    mode="vs": urls berisi gabungan [gambar A..., gambar B...].
+    split_index = jumlah gambar A (titik dimana konten B mulai).
+    title_text    -> judul A (muncul di clip pertama)
+    title_text_b  -> judul B (muncul di clip pertama B)
+    trivia_text   -> teks hook/banding, tampil di semua clip (opsional)
+    outro_text    -> kalau diisi, tambah 1 clip penutup berisi CTA (mis. bocoran slot berikutnya)
+    """
     if not urls:
         raise ValueError("image_urls kosong!")
 
@@ -154,12 +188,24 @@ def build_slideshow(urls, output_path, mode="trivia", title_text=None, trivia_te
                 subprocess.run(["ffmpeg", "-y", "-i", img, "-vf", f"gblur=sigma={max(20-i*6,5)}", blurred], capture_output=True)
                 img = blurred
 
+            if mode == "vs" and split_index is not None:
+                current_title = title_text if i == 0 else (title_text_b if i == split_index else None)
+            else:
+                current_title = title_text if i == 0 else None
+
             if not _build_single_frame(img, clip_out, dur,
-                                       trivia_text if mode=="trivia" else None,
-                                       title_text if i==0 else None,
+                                       trivia_text if mode in ("trivia", "vs") else None,
+                                       current_title,
                                        i % 2 == 0):
                 raise RuntimeError(f"Gagal build clip {i}")
             clips.append(clip_out)
+
+        if outro_text:
+            outro_clip = os.path.join(tmpdir, "outro.mp4")
+            if _build_outro_frame(imgs[-1], outro_clip, 3, outro_text):
+                clips.append(outro_clip)
+            else:
+                print("Outro gagal dibuat, dilewati (video tetap lanjut tanpa outro).")
 
         # Concat
         concat = os.path.join(tmpdir, "concat.txt")
