@@ -193,12 +193,18 @@ def post_reel_to_fb(video_url, caption):
         ).json()
         video_id, upload_url = start["video_id"], start["upload_url"]
 
-        requests.post(
+        transfer = requests.post(
             upload_url,
-            headers={"Authorization": f"OAuth {FB_PAGE_ACCESS_TOKEN}"},
-            json={"file_url": video_url},
+            headers={
+                "Authorization": f"OAuth {FB_PAGE_ACCESS_TOKEN}",
+                "offset": "0",
+                "file_url": video_url,
+            },
             timeout=60,
         )
+        if not transfer.ok:
+            logger.error(f"FB transfer gagal: {transfer.status_code} {transfer.text}")
+            return {"error": f"transfer_failed: {transfer.text}"}
 
         finish = requests.post(base, params={
             "access_token": FB_PAGE_ACCESS_TOKEN,
