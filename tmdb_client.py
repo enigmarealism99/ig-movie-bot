@@ -53,8 +53,18 @@ def get_random_movie(pool="mixed"):
 
 
 def get_movie_details(movie_id):
-    """Detail lengkap + credits (cast) dalam satu request."""
-    return _get(f"/movie/{movie_id}", {"append_to_response": "credits"})
+    """Detail lengkap + credits (cast) + videos (buat ambil link trailer) dalam satu request."""
+    return _get(f"/movie/{movie_id}", {"append_to_response": "credits,videos"})
+
+
+def get_trailer_url(details):
+    """Ambil link trailer resmi YouTube dari hasil get_movie_details.
+    Return None kalau gak ada trailer YouTube resmi."""
+    videos = details.get("videos", {}).get("results", [])
+    for v in videos:
+        if v.get("type") == "Trailer" and v.get("site") == "YouTube":
+            return f"https://www.youtube.com/watch?v={v['key']}"
+    return None
 
 
 def get_movie_backdrops(movie_id, min_count=3, max_count=5):
