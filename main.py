@@ -319,13 +319,16 @@ def run_fanout_job(content_kind=None):
         movie = random.choice(items)
         details = get_movie_details(movie["id"])
         title_a = details.get("title", "Unknown")
+        trailer_url = get_trailer_url(details)
         images = get_movie_backdrops(movie["id"])
         build_slideshow(
             images, output_path, mode="trivia", title_text=title_a,
             trivia_text="Segera hadir! Masuk watchlist kamu sekarang \U0001F440",
             outro_text=outro_text,
         )
-        fb_caption = wa_caption = ig_caption = build_bocoran_caption(title_a, details.get("overview", ""))
+        fb_caption = wa_caption = ig_caption = build_bocoran_caption(
+            title_a, details.get("overview", ""), trailer_url=trailer_url
+        )
 
     elif content_kind == "polling":
         movie_a, movie_b = get_random_movie(pool="mixed"), get_random_movie(pool="mixed")
