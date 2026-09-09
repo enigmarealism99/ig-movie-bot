@@ -19,12 +19,12 @@ load_dotenv()
 
 from tmdb_client import (
     get_random_movie, get_movie_details, get_movie_backdrops, build_trivia_facts,
-    get_actor_trivia, get_upcoming_korean, get_horror_vs_pair,
+    get_actor_trivia, get_upcoming_korean, get_horror_vs_pair, get_weekly_top, get_trailer_url,
 )
 from video_builder import build_slideshow
 from caption_generator import (
     build_trivia_caption, build_guess_caption, build_actor_caption,
-    build_bocoran_caption, build_polling_caption, build_vs_caption,
+    build_bocoran_caption, build_polling_caption, build_vs_caption, build_trailer_caption,
 )
 from git_publisher import publish_video_to_github, cleanup_old_video
 from ig_publisher import publish_reel
@@ -48,16 +48,18 @@ FB_PAGE_ID = os.environ.get("FB_PAGE_ID")
 FB_PAGE_ACCESS_TOKEN = os.environ.get("FB_PAGE_ACCESS_TOKEN")
 GRAPH_API_VERSION = "v25.0"
 
-# Jadwal harian: (jam, menit, jenis_konten) - WIB, jam paling ramai audience
-CONTENT_SCHEDULE = [
-    (7, 0, "bocoran"),
-    (12, 30, "polling"),
-    (19, 30, "link_fb"),
-]
+# Jadwal harian: jam paling ramai audience (WIB) - jenis kontennya diputar
+# terpisah dari jam (lihat CONTENT_ROTATION), jadi nambah jenis baru tinggal
+# nambah 1 baris di pool ini, gak perlu utak-atik jam.
+CONTENT_SLOT_TIMES = [(7, 0), (12, 30), (19, 30)]
+CONTENT_ROTATION = ["bocoran", "polling", "link_fb", "trailer"]
+_rotation_state = {"index": 0}
+
 OUTRO_LABELS = {
     "bocoran": "Bocoran film & series baru",
     "polling": "Polling seru: vote pilihanmu",
     "link_fb": "Video VS lengkap horor Korea",
+    "trailer": "Trailer terbaru + link nonton lengkap",
 }
 
 FB_RECENT_VIDEOS = []          # max 5 video_id terakhir, buat sasaran auto-reply komentar
@@ -283,18 +285,24 @@ def comment_poll_loop():
 
 
 def get_next_slot_label(current_kind):
-    """Teks outro CTA: kasih tau jenis+jam konten berikutnya di jadwal."""
-    order = [k for _, _, k in CONTENT_SCHEDULE]
-    idx = order.index(current_kind)
-    nxt = (idx + 1) % len(order)
-    hh, mm, next_kind = CONTENT_SCHEDULE[nxt]
-    return f"{OUTRO_LABELS[next_kind]}\njam {hh:02d}:{mm:02d} di Channel WA & FB kita!"
+    """Teks outro CTA: kasih tau jenis konten berikutnya di rotasi."""
+    idx = CONTENT_ROTATION.index(current_kind) if current_kind in CONTENT_ROTATION else -1
+    nxt_kind = CONTENT_ROTATION[(idx + 1) % len(CONTENT_ROTATION)]
+    return f"{OUTRO_LABELS[nxt_kind]}\nnantikan di postingan berikutnya!"
+
+
+def next_rotation_kind():
+    """Ambil jenis konten berikutnya dari CONTENT_ROTATION secara berurutan
+    (bukan random) - biar semua jenis kepakai rata, gak ada yang jarang muncul."""
+    kind = CONTENT_ROTATION[_rotation_state["index"] % len(CONTENT_ROTATION)]
+    _rotation_state["index"] += 1
+    return kind
 
 
 def run_fanout_job(content_kind=None):
     """Job posting baru: 1 video digenerate sekali, di-fanout ke FB -> WA -> IG.
     Rotasi 3 jenis: bocoran (info upcoming), polling (2 film random), link_fb (VS horror mahal-murah)."""
-    content_kind = content_kind or random.choice(["bocoran", "polling", "link_fb"])
+    content_kind = content_kind or random.choice(CONTENT_ROTATION)
     human_delay(min_sec=5, max_sec=30)
     logger.info(f"Mulai job OnAir Korea TV, jenis: {content_kind}")
 
@@ -331,6 +339,23 @@ def run_fanout_job(content_kind=None):
             split_index=len(images_a), outro_text=outro_text,
         )
         fb_caption = wa_caption = ig_caption = build_polling_caption(title_a, title_b)
+
+    elif content_kind == "trailer":
+        items = get_weekly_top(limit=10)
+        if not items:
+            logger.warning("Gak ada film trending, skip job ini.")
+            return
+        movie = random.choice(items)
+        details = get_movie_details(movie["id"])
+        title_a = details.get("title", "Unknown")
+        trailer_url = get_trailer_url(details)
+        images = get_movie_backdrops(movie["id"])
+        build_slideshow(
+            images, output_path, mode="trivia", title_text=title_a,
+            trivia_text="Udah nonton trailernya? Link lengkap di caption!",
+            outro_text=outro_text,
+        )
+        fb_caption = wa_caption = ig_caption = build_trailer_caption(title_a, trailer_url)
 
     else:  # link_fb
         detail_a, detail_b = get_horror_vs_pair()
@@ -388,29 +413,31 @@ def run_fanout_job(content_kind=None):
 
 
 def next_scheduled_slot():
-    """Cari slot berikutnya dari CONTENT_SCHEDULE, plus jitter kecil (anti-ban)."""
+    """Cari jam slot berikutnya dari CONTENT_SLOT_TIMES, plus jitter kecil (anti-ban)."""
     now = datetime.now()
     today_slots = [
         now.replace(hour=h, minute=m, second=0, microsecond=0)
-        for h, m, _ in CONTENT_SCHEDULE
+        for h, m in CONTENT_SLOT_TIMES
     ]
-    for i, slot_time in enumerate(today_slots):
+    for slot_time in today_slots:
         if slot_time > now:
             jitter = timedelta(minutes=random.randint(-5, 10))
-            return slot_time + jitter, CONTENT_SCHEDULE[i][2]
+            return slot_time + jitter
     tomorrow = today_slots[0] + timedelta(days=1)
     jitter = timedelta(minutes=random.randint(-5, 10))
-    return tomorrow + jitter, CONTENT_SCHEDULE[0][2]
+    return tomorrow + jitter
 
 
 def onair_scheduled_loop():
-    """Mode otomatis permanen: 3 slot/hari, tiap slot fanout ke IG+WA+FB.
+    """Mode otomatis permanen: 3 slot jam/hari, jenis kontennya diputar
+    berurutan dari CONTENT_ROTATION (independen dari jam slotnya).
     Sekalian jalanin comment_poll_loop di background buat auto-reply FB."""
-    logger.info("OnAir Korea TV started - Scheduled Mode (3 slot/hari)")
+    logger.info("OnAir Korea TV started - Scheduled Mode")
     threading.Thread(target=comment_poll_loop, daemon=True).start()
 
     while True:
-        next_time, content_kind = next_scheduled_slot()
+        next_time = next_scheduled_slot()
+        content_kind = next_rotation_kind()
         wait_seconds = (next_time - datetime.now()).total_seconds()
         if wait_seconds > 0:
             logger.info(f"Next post ({content_kind}) at: {next_time.strftime('%Y-%m-%d %H:%M')}")
@@ -436,7 +463,7 @@ if __name__ == "__main__":
     parser.add_argument("--type", choices=["trivia", "guess"], default=None,
                          help="[lama] Paksa tipe konten trivia/guess, post ke IG doang")
     parser.add_argument("--actor", action="store_true", help="[lama] Mode trivia aktor, IG doang")
-    parser.add_argument("--content-kind", choices=["bocoran", "polling", "link_fb"], default=None,
+    parser.add_argument("--content-kind", choices=["bocoran", "polling", "link_fb", "trailer"], default=None,
                          help="Jalankan 1 job baru (fanout IG+WA+FB), buat testing manual")
     parser.add_argument("--scheduled", action="store_true",
                          help="Mode otomatis: 3 slot/hari (07:00 bocoran, 12:30 polling, 19:30 link_fb), fanout ke IG+WA+FB")

@@ -105,14 +105,15 @@ BOCORAN_HOOKS = [
 ]
 
 
-def build_bocoran_caption(title, overview=""):
+def build_bocoran_caption(title, overview="", trailer_url=None):
     hook = random.choice(BOCORAN_HOOKS).format(title=title)
     synopsis = (overview or "").strip()
     if len(synopsis) > 200:
         synopsis = synopsis[:197].rsplit(" ", 1)[0] + "..."
     tags = " ".join(random.sample(HASHTAG_POOL, 5))
     body = f"\n\n{synopsis}" if synopsis else ""
-    return f"{hook}{body}\n\n{tags}"
+    trailer_line = f"\n\n\U0001F3AC Trailer: {trailer_url}" if trailer_url else ""
+    return f"{hook}{body}{trailer_line}\n\n{tags}"
 
 
 POLLING_HOOKS = [
@@ -122,10 +123,16 @@ POLLING_HOOKS = [
 ]
 
 
-def build_polling_caption(title_a, title_b):
+def build_polling_caption(title_a, title_b, trailer_a=None, trailer_b=None):
     hook = random.choice(POLLING_HOOKS).format(a=title_a, b=title_b)
+    trailer_lines = []
+    if trailer_a:
+        trailer_lines.append(f"\U0001F3AC {title_a}: {trailer_a}")
+    if trailer_b:
+        trailer_lines.append(f"\U0001F3AC {title_b}: {trailer_b}")
+    trailer_block = ("\n\n" + "\n".join(trailer_lines)) if trailer_lines else ""
     tags = " ".join(random.sample(HASHTAG_POOL, 5))
-    return f"{hook}\n\n{tags}"
+    return f"{hook}{trailer_block}\n\n{tags}"
 
 
 VS_HOOKS = [
@@ -147,3 +154,17 @@ def build_vs_caption(title_a, title_b, fb_link=None):
     cta = random.choice(VS_CTA_TEMPLATES).format(fb_link=fb_link) if fb_link else VS_CTA_FALLBACK
     tags = " ".join(random.sample(HASHTAG_POOL, 5))
     return f"{hook}\n\n{cta}\n\n{tags}"
+
+
+TRAILER_HOOKS = [
+    "Udah nonton trailer \"{title}\"? Kalau belum, link-nya ada di bawah \U0001F447",
+    "\"{title}\" bikin penasaran dari trailernya aja \U0001F3AC",
+    "Trailer \"{title}\" ini worth ditonton sebelum filmnya rilis \U0001F440",
+]
+
+
+def build_trailer_caption(title, trailer_url=None):
+    hook = random.choice(TRAILER_HOOKS).format(title=title)
+    link_line = f"\n\nNonton trailernya di sini: {trailer_url}" if trailer_url else ""
+    tags = " ".join(random.sample(HASHTAG_POOL, 5))
+    return f"{hook}{link_line}\n\n{tags}"
